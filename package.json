@@ -1,0 +1,19 @@
+{
+  "name": "academic-rag-node",
+  "version": "1.0.0",
+  "type": "module",
+  "scripts": {
+    "start": "node server_turbo.mjs",
+    "index": "node gerar_indice.mjs"
+  },
+  "dependencies": {
+    "@google/generative-ai": "^0.24.1",
+    "dotenv": "^16.4.5",
+    "express": "^4.22.1",
+    "googleapis": "^134.0.0",
+    "groq-sdk": "^1.1.2",
+    "marked": "^18.0.0",
+    "pdf-parse": "^2.4.5",
+    "pdfjs-dist": "^5.6.205"
+  }
+}
