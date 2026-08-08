@@ -167,6 +167,28 @@ function buscarReferenciaCanonica(pergunta) {
     return entradas.map(e => `- ${e.definicao}`).join('\n');
 }
 
+// Varre recursivamente uma pasta do Drive e devolve só os arquivos (não pastas)
+// encontrados em qualquer nível abaixo dela — restringe a busca à árvore de
+// DISCIPLINAS_FOLDER_ID, em vez de depender de um filtro de nome no Drive inteiro.
+async function listarArquivosRecursivo(drive, folderId) {
+    const arquivos = [];
+    const res = await drive.files.list({
+        q: `'${folderId}' in parents and trashed = false`,
+        fields: 'files(id, name, mimeType)',
+        pageSize: 200
+    });
+
+    for (const item of res.data.files) {
+        if (item.mimeType === 'application/vnd.google-apps.folder') {
+            const doSubdiretorio = await listarArquivosRecursivo(drive, item.id);
+            arquivos.push(...doSubdiretorio);
+        } else {
+            arquivos.push(item);
+        }
+    }
+    return arquivos;
+}
+
 async function extrairTudoDoDrive() {
     const oauth2Client = new google.auth.OAuth2(
         process.env.GOOGLE_CLIENT_ID, 
@@ -192,23 +214,22 @@ async function extrairTudoDoDrive() {
     console.log("🔍 Buscando materiais acadêmicos no Drive...");
 
     try {
-        const busca = await drive.files.list({
-            q: `'${DISCIPLINAS_FOLDER_ID}' in parents or (name contains 'Aula' or name contains 'Plano')`,
-            fields: 'files(id, name, mimeType)'
-        });
+        // Restrito só à árvore da pasta "Disciplinas" (DISCIPLINAS_FOLDER_ID) — sem
+        // o fallback antigo por nome ('Aula'/'Plano'), que buscava no Drive inteiro
+        // e podia expor arquivos fora do escopo pretendido.
+        const arquivosDaArvore = await listarArquivosRecursivo(drive, DISCIPLINAS_FOLDER_ID);
 
         let contextoExtraido = "";
 
         // Processa os primeiros 5 PDFs para manter o contexto dentro do limite da Groq
-        for (const arquivo of busca.data.files.slice(0, 5)) {
-            if (arquivo.mimeType === 'application/pdf') {
-                try {
-                    const res = await drive.files.get({ fileId: arquivo.id, alt: 'media' }, { responseType: 'arraybuffer' });
-                    const data = await pdfExtract(Buffer.from(res.data));
-                    contextoExtraido += `\n--- MATÉRIA: ${arquivo.name} ---\n${data.text.substring(0, 3000)}\n`;
-                } catch (e) {
-                    console.log(`Pulei o arquivo ${arquivo.name} por erro de leitura.`);
-                }
+        const pdfs = arquivosDaArvore.filter(a => a.mimeType === 'application/pdf');
+        for (const arquivo of pdfs.slice(0, 5)) {
+            try {
+                const res = await drive.files.get({ fileId: arquivo.id, alt: 'media' }, { responseType: 'arraybuffer' });
+                const data = await pdfExtract(Buffer.from(res.data));
+                contextoExtraido += `\n--- MATÉRIA: ${arquivo.name} ---\n${data.text.substring(0, 3000)}\n`;
+            } catch (e) {
+                console.log(`Pulei o arquivo ${arquivo.name} por erro de leitura.`);
             }
         }
         return contextoExtraido;
