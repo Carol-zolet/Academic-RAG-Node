@@ -19,6 +19,28 @@ const DISCIPLINAS_FOLDER_ID = '178JLC2zNL5c6bd9on-5fmPYrm3qnEDmn';
 
 app.use(express.json());
 
+// Glossário de definições formais canônicas — fonte de verdade para conceitos
+// com risco de o modelo "lembrar errado" (formas normais, tipos de JOIN etc.),
+// em vez de depender só do material bruto extraído dos PDFs do Drive.
+let glossarioFormal = {};
+try {
+    glossarioFormal = JSON.parse(fs.readFileSync('./glossario_formal.json', 'utf8'));
+    console.log(`✅ Glossário formal carregado: ${Object.keys(glossarioFormal).length} conceitos.`);
+} catch (err) {
+    console.error("⚠️ Aviso: glossario_formal.json não encontrado ou inválido. Seguindo sem referência canônica.", err.message);
+}
+
+// Roteamento leve por palavra-chave: retorna só as definições cujas tags
+// aparecem na pergunta do usuário (sem custo de tokens quando não há match).
+function buscarReferenciaCanonica(pergunta) {
+    const perguntaLower = pergunta.toLowerCase();
+    const entradas = Object.values(glossarioFormal).filter(entry =>
+        entry.tags.some(tag => perguntaLower.includes(tag.toLowerCase()))
+    );
+    if (entradas.length === 0) return "";
+    return entradas.map(e => `- ${e.definicao}`).join('\n');
+}
+
 async function extrairTudoDoDrive() {
     const oauth2Client = new google.auth.OAuth2(
         process.env.GOOGLE_CLIENT_ID, 
@@ -75,7 +97,8 @@ app.post('/chat', async (req, res) => {
     
     try {
         const contexto = await extrairTudoDoDrive();
-        
+        const referenciaCanonica = buscarReferenciaCanonica(pergunta);
+
         // Chamada para o novo modelo Llama 3.3
         const completion = await groq.chat.completions.create({
             messages: [
@@ -85,7 +108,11 @@ REGRAS DE RESPOSTA:
 1. Estrutura a explicação em UMA passada: defina o conceito, mostre o exemplo prático e feche na conclusão técnica — nessa ordem, sem reabrir ou revisar o raciocínio depois de já ter afirmado algo.
 2. Nunca narre o processo de pensar. Não uses frases como "na verdade", "pensando melhor", "voltando atrás", "só para reconsiderar" ou equivalentes. Decida a resposta tecnicamente correta antes de escrever e apresente apenas essa versão final.
 3. Se o material de contexto trouxer explicações repetidas, parciais ou aparentemente conflitantes sobre o mesmo tópico, resolva a divergência internamente e responda apenas com a versão tecnicamente mais precisa — não comente sobre inconsistências no material fornecido.
+${referenciaCanonica ? `4. Abaixo há uma REFERÊNCIA TÉCNICA CANÔNICA para o(s) conceito(s) perguntado(s). Ela é a fonte de verdade para a definição formal — use-a como base mesmo que o CONTEXTO DAS DISCIPLINAS traga uma formulação diferente ou incompleta; pode usar exemplos do contexto para ilustrá-la.
 
+REFERÊNCIA TÉCNICA CANÔNICA:
+${referenciaCanonica}
+` : ''}
 TOM: direto e confiante, como um mentor sênior que já sabe a resposta — sem perder profundidade técnica nem os exemplos práticos.
 
 Baseie-se nestes materiais: ${contexto}` },

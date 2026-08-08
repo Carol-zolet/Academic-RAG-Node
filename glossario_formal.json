@@ -1,0 +1,62 @@
+{
+  "1fn": {
+    "disciplina": "Banco_de_Dados",
+    "tags": ["1fn", "primeira forma normal", "atomicidade de dados"],
+    "definicao": "1FN: toda coluna contém apenas valores atômicos (indivisíveis) e não há grupos repetidos ou colunas multivaloradas. Cada linha é única e identificável por uma chave."
+  },
+  "2fn": {
+    "disciplina": "Banco_de_Dados",
+    "tags": ["2fn", "segunda forma normal", "dependência parcial"],
+    "definicao": "2FN: a tabela está em 1FN e não tem dependência parcial — ou seja, com chave primária composta, todo atributo não-chave depende de TODOS os campos da chave, não só de parte dela. Se a chave primária for simples (um único campo), a tabela já satisfaz 2FN automaticamente."
+  },
+  "3fn": {
+    "disciplina": "Banco_de_Dados",
+    "tags": ["3fn", "terceira forma normal", "dependência transitiva"],
+    "definicao": "3FN: a tabela está em 2FN e não tem dependência transitiva — nenhum atributo não-chave depende de outro atributo não-chave (só pode depender diretamente da chave primária)."
+  },
+  "bcnf": {
+    "disciplina": "Banco_de_Dados",
+    "tags": ["bcnf", "boyce-codd", "forma normal de boyce-codd"],
+    "definicao": "BCNF (Forma Normal de Boyce-Codd): versão mais rigorosa da 3FN — para toda dependência funcional X→Y não trivial, X precisa ser uma superchave. Resolve casos raros de anomalia que a 3FN não cobre, geralmente envolvendo chaves candidatas sobrepostas."
+  },
+  "dependencia_funcional": {
+    "disciplina": "Banco_de_Dados",
+    "tags": ["dependência funcional", "determina", "df"],
+    "definicao": "Dependência funcional (X → Y): o valor de Y é determinado unicamente pelo valor de X. É o conceito-base usado para definir todas as formas normais (2FN trata dependência parcial, 3FN e BCNF tratam dependência transitiva/geral)."
+  },
+  "chaves": {
+    "disciplina": "Banco_de_Dados",
+    "tags": ["chave primária", "chave estrangeira", "chave candidata", "chave composta", "pk", "fk"],
+    "definicao": "Chave primária (PK): identifica unicamente cada linha da tabela. Chave estrangeira (FK): referencia a PK de outra tabela, garantindo integridade referencial. Chave candidata: qualquer conjunto mínimo de atributos que poderia servir como PK. Chave composta: PK formada por mais de uma coluna."
+  },
+  "tipos_join": {
+    "disciplina": "Banco_de_Dados",
+    "tags": ["join", "inner join", "left join", "right join", "full outer join", "cross join"],
+    "definicao": "INNER JOIN: retorna só as linhas com correspondência em ambas as tabelas. LEFT JOIN: todas as linhas da tabela à esquerda + correspondências da direita (NULL se não houver). RIGHT JOIN: o inverso do LEFT. FULL OUTER JOIN: união de LEFT e RIGHT (todas as linhas de ambos os lados). CROSS JOIN: produto cartesiano — todas as combinações possíveis, sem condição de junção."
+  },
+  "acid": {
+    "disciplina": "Banco_de_Dados",
+    "tags": ["acid", "atomicidade", "consistência", "isolamento", "durabilidade", "transação"],
+    "definicao": "ACID (propriedades de transações): Atomicidade (a transação ocorre por completo ou não ocorre), Consistência (a transação leva o banco de um estado válido a outro), Isolamento (transações concorrentes não interferem entre si), Durabilidade (após commit, os dados persistem mesmo em caso de falha)."
+  },
+  "indices": {
+    "disciplina": "Banco_de_Dados",
+    "tags": ["índice", "index", "índice único", "clustered", "non-clustered"],
+    "definicao": "Índice: estrutura auxiliar (geralmente B-Tree) que acelera buscas em uma coluna, ao custo de espaço extra e overhead em INSERT/UPDATE/DELETE. Índice único (UNIQUE) também impõe restrição de não-duplicidade. Clustered: define a ordem física dos dados na tabela (só um por tabela). Non-clustered: estrutura separada que aponta para os dados (vários por tabela)."
+  },
+  "integridade_referencial": {
+    "disciplina": "Banco_de_Dados",
+    "tags": ["integridade referencial", "foreign key constraint", "cascata"],
+    "definicao": "Integridade referencial: garante que toda FK aponte para um valor de PK existente na tabela referenciada (ou seja NULL, se permitido). Ações em cascata (CASCADE, SET NULL, RESTRICT) definem o comportamento ao deletar/atualizar a linha referenciada."
+  },
+  "modelo_er": {
+    "disciplina": "Banco_de_Dados",
+    "tags": ["entidade-relacionamento", "der", "cardinalidade", "1:1", "1:n", "n:n"],
+    "definicao": "Modelo Entidade-Relacionamento (ER/DER): representa entidades, atributos e relacionamentos entre elas antes da implementação física. Cardinalidade descreve quantas instâncias de uma entidade se relacionam com instâncias de outra: 1:1, 1:N ou N:N (esta última exige tabela associativa/intermediária)."
+  },
+  "isolamento_transacoes": {
+    "disciplina": "Banco_de_Dados",
+    "tags": ["nível de isolamento", "read committed", "serializable", "dirty read", "phantom read"],
+    "definicao": "Níveis de isolamento (do mais fraco ao mais forte): Read Uncommitted, Read Committed, Repeatable Read, Serializable. Cada nível evita progressivamente mais anomalias de concorrência: dirty read (ler dado não commitado), non-repeatable read (mesma leitura muda entre selects) e phantom read (novas linhas aparecem entre selects)."
+  }
+}
