@@ -4,13 +4,10 @@ import dotenv from 'dotenv';
 import { google } from 'googleapis';
 import { marked } from 'marked';
 import Groq from 'groq-sdk';
-import { createRequire } from 'module';
+import { PDFParse } from 'pdf-parse';
 import jwt from 'jsonwebtoken';
 import bcrypt from 'bcryptjs';
 import cookieParser from 'cookie-parser';
-
-const require = createRequire(import.meta.url);
-const pdfExtract = require('pdf-parse');
 
 dotenv.config();
 
@@ -170,6 +167,12 @@ function buscarReferenciaCanonica(pergunta) {
 // Varre recursivamente uma pasta do Drive e devolve só os arquivos (não pastas)
 // encontrados em qualquer nível abaixo dela — restringe a busca à árvore de
 // DISCIPLINAS_FOLDER_ID, em vez de depender de um filtro de nome no Drive inteiro.
+//
+// A árvore real tem ~930 subpastas (não é só um nível de "disciplinas"), então
+// varrer sequencialmente (um await por vez) demora minutos e estoura qualquer
+// timeout de request. Por isso as subpastas de cada nível são varridas em
+// paralelo com Promise.all — cada nível ainda espera o anterior terminar, mas
+// dentro de um nível todas as chamadas saem juntas.
 async function listarArquivosRecursivo(drive, folderId) {
     const arquivos = [];
     const res = await drive.files.list({
@@ -178,14 +181,22 @@ async function listarArquivosRecursivo(drive, folderId) {
         pageSize: 200
     });
 
+    const subpastas = [];
     for (const item of res.data.files) {
         if (item.mimeType === 'application/vnd.google-apps.folder') {
-            const doSubdiretorio = await listarArquivosRecursivo(drive, item.id);
-            arquivos.push(...doSubdiretorio);
+            subpastas.push(item);
         } else {
             arquivos.push(item);
         }
     }
+
+    const resultadosSubpastas = await Promise.all(
+        subpastas.map(sp => listarArquivosRecursivo(drive, sp.id))
+    );
+    for (const lista of resultadosSubpastas) {
+        arquivos.push(...lista);
+    }
+
     return arquivos;
 }
 
@@ -224,12 +235,16 @@ async function extrairTudoDoDrive() {
         // Processa os primeiros 5 PDFs para manter o contexto dentro do limite da Groq
         const pdfs = arquivosDaArvore.filter(a => a.mimeType === 'application/pdf');
         for (const arquivo of pdfs.slice(0, 5)) {
+            let parser;
             try {
                 const res = await drive.files.get({ fileId: arquivo.id, alt: 'media' }, { responseType: 'arraybuffer' });
-                const data = await pdfExtract(Buffer.from(res.data));
-                contextoExtraido += `\n--- MATÉRIA: ${arquivo.name} ---\n${data.text.substring(0, 3000)}\n`;
+                parser = new PDFParse({ data: Buffer.from(res.data) });
+                const resultado = await parser.getText();
+                contextoExtraido += `\n--- MATÉRIA: ${arquivo.name} ---\n${resultado.text.substring(0, 3000)}\n`;
             } catch (e) {
-                console.log(`Pulei o arquivo ${arquivo.name} por erro de leitura.`);
+                console.log(`Pulei o arquivo ${arquivo.name} por erro de leitura: ${e.message}`);
+            } finally {
+                if (parser) await parser.destroy();
             }
         }
         return contextoExtraido;
