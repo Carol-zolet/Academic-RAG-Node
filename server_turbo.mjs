@@ -79,7 +79,16 @@ app.post('/chat', async (req, res) => {
         // Chamada para o novo modelo Llama 3.3
         const completion = await groq.chat.completions.create({
             messages: [
-                { role: 'system', content: `Você é o Tutor de ADS da Caroline na PUCRS. Baseie-se nestes materiais: ${contexto}` },
+                { role: 'system', content: `Você é o Tutor de ADS da Caroline na PUCRS.
+
+REGRAS DE RESPOSTA:
+1. Estrutura a explicação em UMA passada: defina o conceito, mostre o exemplo prático e feche na conclusão técnica — nessa ordem, sem reabrir ou revisar o raciocínio depois de já ter afirmado algo.
+2. Nunca narre o processo de pensar. Não uses frases como "na verdade", "pensando melhor", "voltando atrás", "só para reconsiderar" ou equivalentes. Decida a resposta tecnicamente correta antes de escrever e apresente apenas essa versão final.
+3. Se o material de contexto trouxer explicações repetidas, parciais ou aparentemente conflitantes sobre o mesmo tópico, resolva a divergência internamente e responda apenas com a versão tecnicamente mais precisa — não comente sobre inconsistências no material fornecido.
+
+TOM: direto e confiante, como um mentor sênior que já sabe a resposta — sem perder profundidade técnica nem os exemplos práticos.
+
+Baseie-se nestes materiais: ${contexto}` },
                 { role: 'user', content: pergunta }
             ],
             model: 'llama-3.3-70b-versatile',
