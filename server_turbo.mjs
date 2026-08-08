@@ -200,6 +200,58 @@ async function listarArquivosRecursivo(drive, folderId) {
     return arquivos;
 }
 
+// Classifica um arquivo do Drive num tipo suportado de extração, ou null se
+// não for suportado. .ipynb e .data compartilham o mesmo mimeType genérico
+// (application/octet-stream) no Drive, então notebook é identificado pela
+// extensão do nome, não pelo mimeType.
+function classificarArquivo(arquivo) {
+    if (arquivo.mimeType === 'application/pdf') return 'pdf';
+    if (arquivo.mimeType === 'text/plain') return 'txt';
+    if (arquivo.mimeType === 'text/markdown') return 'md';
+    if (arquivo.mimeType === 'text/csv') return 'csv';
+    if (arquivo.name.toLowerCase().endsWith('.ipynb')) return 'notebook';
+    return null;
+}
+
+// Extrai o texto de um notebook Jupyter: só cells markdown/code (source),
+// sem outputs (gráficos, prints, stack traces) — só o que foi escrito, não
+// o resultado de execução.
+function extrairTextoNotebook(bufferJson) {
+    const notebook = JSON.parse(bufferJson.toString('utf8'));
+    const partes = [];
+    for (const cell of notebook.cells || []) {
+        if (cell.cell_type !== 'markdown' && cell.cell_type !== 'code') continue;
+        const fonte = Array.isArray(cell.source) ? cell.source.join('') : (cell.source || '');
+        if (!fonte.trim()) continue;
+        partes.push(`[${cell.cell_type}]\n${fonte}`);
+    }
+    return partes.join('\n\n');
+}
+
+// Baixa e extrai o texto de um arquivo já classificado. PDF usa o parser
+// dedicado; txt/md/csv são texto puro; notebook usa o extrator acima.
+async function extrairTextoDoArquivo(drive, arquivo, tipo) {
+    const res = await drive.files.get({ fileId: arquivo.id, alt: 'media' }, { responseType: 'arraybuffer' });
+    const buffer = Buffer.from(res.data);
+
+    if (tipo === 'pdf') {
+        const parser = new PDFParse({ data: buffer });
+        try {
+            const resultado = await parser.getText();
+            return resultado.text;
+        } finally {
+            await parser.destroy();
+        }
+    }
+
+    if (tipo === 'notebook') {
+        return extrairTextoNotebook(buffer);
+    }
+
+    // txt, md, csv
+    return buffer.toString('utf8');
+}
+
 async function extrairTudoDoDrive() {
     const oauth2Client = new google.auth.OAuth2(
         process.env.GOOGLE_CLIENT_ID, 
@@ -232,19 +284,31 @@ async function extrairTudoDoDrive() {
 
         let contextoExtraido = "";
 
-        // Processa os primeiros 5 PDFs para manter o contexto dentro do limite da Groq
-        const pdfs = arquivosDaArvore.filter(a => a.mimeType === 'application/pdf');
-        for (const arquivo of pdfs.slice(0, 5)) {
-            let parser;
+        // Separa arquivos com formato suportado (pdf, txt, md, csv, notebook)
+        // dos demais (imagens, planilhas, vídeos, zips etc.) — esses últimos
+        // são contados e logados, não descartados silenciosamente.
+        const arquivosSuportados = [];
+        let ignorados = 0;
+        for (const arquivo of arquivosDaArvore) {
+            const tipo = classificarArquivo(arquivo);
+            if (tipo) {
+                arquivosSuportados.push({ arquivo, tipo });
+            } else {
+                ignorados++;
+            }
+        }
+        if (ignorados > 0) {
+            console.log(`ℹ️ ${ignorados} arquivo(s) com formato não suportado ignorados (imagens, planilhas, vídeos etc.).`);
+        }
+
+        // Processa os primeiros 8 arquivos suportados (de qualquer tipo) para
+        // manter o contexto dentro do limite da Groq.
+        for (const { arquivo, tipo } of arquivosSuportados.slice(0, 8)) {
             try {
-                const res = await drive.files.get({ fileId: arquivo.id, alt: 'media' }, { responseType: 'arraybuffer' });
-                parser = new PDFParse({ data: Buffer.from(res.data) });
-                const resultado = await parser.getText();
-                contextoExtraido += `\n--- MATÉRIA: ${arquivo.name} ---\n${resultado.text.substring(0, 3000)}\n`;
+                const texto = await extrairTextoDoArquivo(drive, arquivo, tipo);
+                contextoExtraido += `\n--- MATÉRIA: ${arquivo.name} (${tipo}) ---\n${texto.substring(0, 3000)}\n`;
             } catch (e) {
                 console.log(`Pulei o arquivo ${arquivo.name} por erro de leitura: ${e.message}`);
-            } finally {
-                if (parser) await parser.destroy();
             }
         }
         return contextoExtraido;
