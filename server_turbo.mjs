@@ -473,6 +473,7 @@ app.get('/', exigirAuthPagina, (req, res) => {
                 --accent-soft: rgba(59, 130, 246, 0.15);
                 --user-bubble: #263042;
                 --success: #4ade80;
+                --danger: #f87171;
             }
             * { box-sizing: border-box; }
             body { background: var(--bg); color: var(--text); font-family: 'Inter', system-ui, sans-serif; height: 100vh; display: flex; flex-direction: column; margin: 0; }
@@ -480,6 +481,12 @@ app.get('/', exigirAuthPagina, (req, res) => {
             .app-header { display: flex; align-items: center; justify-content: center; position: relative; padding: 1.1rem 1rem 0.9rem; font-size: 1.15rem; font-weight: 600; border-bottom: 1px solid var(--border); }
             .logout-btn { position: absolute; right: 1rem; background: transparent; border: 1px solid var(--border); color: var(--text-muted); font-size: 0.75rem; padding: 0.3rem 0.7rem; border-radius: 6px; cursor: pointer; }
             .logout-btn:hover { color: var(--text); border-color: var(--accent); }
+
+            .refresh-btn { position: absolute; left: 1rem; background: transparent; border: 1px solid var(--border); color: var(--text-muted); font-size: 0.75rem; padding: 0.3rem 0.7rem; border-radius: 6px; cursor: pointer; }
+            .refresh-btn:hover:not(:disabled) { color: var(--text); border-color: var(--accent); }
+            .refresh-btn:disabled { opacity: 0.6; cursor: default; }
+            .refresh-btn.sucesso { color: var(--success); border-color: var(--success); }
+            .refresh-btn.erro { color: var(--danger); border-color: var(--danger); }
 
             #chat-window { flex: 1; overflow-y: auto; padding: 1.5rem 1rem; max-width: 900px; width: 100%; margin: 0 auto; }
 
@@ -528,6 +535,7 @@ app.get('/', exigirAuthPagina, (req, res) => {
     <body>
         <div class="app">
             <div class="app-header">
+                <button class="refresh-btn" id="btn-refresh" onclick="atualizarIndice()">Atualizar índice</button>
                 Central de Inteligência ADS 🎓
                 <button class="logout-btn" onclick="sair()">Sair</button>
             </div>
@@ -640,6 +648,39 @@ app.get('/', exigirAuthPagina, (req, res) => {
             async function sair() {
                 await fetch('/logout', { method: 'POST' }).catch(() => {});
                 window.location.href = '/login';
+            }
+
+            async function atualizarIndice() {
+                const btn = document.getElementById('btn-refresh');
+                const textoOriginal = btn.textContent;
+                btn.disabled = true;
+                btn.classList.remove('sucesso', 'erro');
+                btn.textContent = 'Atualizando...';
+
+                try {
+                    const res = await fetch('/refresh-cache', { method: 'POST' });
+                    const data = await res.json().catch(() => ({}));
+
+                    if (res.ok && data.ok) {
+                        btn.classList.add('sucesso');
+                        btn.textContent = '✅ ' + data.arquivosIndexados + ' arquivos indexados';
+                    } else if (res.status === 401) {
+                        btn.classList.add('erro');
+                        btn.textContent = '❌ Sessão expirada — faça login de novo';
+                    } else {
+                        btn.classList.add('erro');
+                        btn.textContent = '❌ ' + (data.error || 'Erro ao atualizar');
+                    }
+                } catch (err) {
+                    btn.classList.add('erro');
+                    btn.textContent = '❌ Erro ao conectar com o servidor';
+                } finally {
+                    setTimeout(() => {
+                        btn.disabled = false;
+                        btn.classList.remove('sucesso', 'erro');
+                        btn.textContent = textoOriginal;
+                    }, 3500);
+                }
             }
         </script>
     </body>
