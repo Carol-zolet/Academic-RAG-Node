@@ -58,5 +58,70 @@
     "disciplina": "Banco_de_Dados",
     "tags": ["nível de isolamento", "read committed", "serializable", "dirty read", "phantom read"],
     "definicao": "Níveis de isolamento (do mais fraco ao mais forte): Read Uncommitted, Read Committed, Repeatable Read, Serializable. Cada nível evita progressivamente mais anomalias de concorrência: dirty read (ler dado não commitado), non-repeatable read (mesma leitura muda entre selects) e phantom read (novas linhas aparecem entre selects)."
+  },
+  "srp": {
+    "disciplina": "Engenharia_de_Software",
+    "tags": ["srp", "single responsibility", "responsabilidade única", "princípio da responsabilidade única"],
+    "definicao": "SRP (Single Responsibility Principle): uma classe deve ter um único motivo para mudar — ou seja, uma única responsabilidade bem definida. Se uma classe faz mais de uma coisa, mudanças em uma responsabilidade podem quebrar a outra sem relação nenhuma."
+  },
+  "ocp": {
+    "disciplina": "Engenharia_de_Software",
+    "tags": ["ocp", "open/closed", "aberto/fechado", "princípio aberto-fechado"],
+    "definicao": "OCP (Open/Closed Principle): classes devem estar abertas para extensão, mas fechadas para modificação — deve ser possível adicionar novo comportamento sem alterar código já existente e testado, tipicamente via herança/interfaces em vez de editar a classe original."
+  },
+  "lsp": {
+    "disciplina": "Engenharia_de_Software",
+    "tags": ["lsp", "liskov", "substituição de liskov"],
+    "definicao": "LSP (Liskov Substitution Principle): uma subclasse deve poder substituir sua classe-mãe em qualquer lugar do código sem quebrar o comportamento esperado. Se usar a subclasse exige checar de qual tipo concreto o objeto é, o princípio provavelmente foi violado."
+  },
+  "isp": {
+    "disciplina": "Engenharia_de_Software",
+    "tags": ["isp", "interface segregation", "segregação de interface"],
+    "definicao": "ISP (Interface Segregation Principle): é melhor várias interfaces pequenas e específicas do que uma interface grande e genérica — uma classe não deve ser forçada a implementar métodos que não usa."
+  },
+  "dip": {
+    "disciplina": "Engenharia_de_Software",
+    "tags": ["dip", "dependency inversion", "inversão de dependência"],
+    "definicao": "DIP (Dependency Inversion Principle): módulos de alto nível não devem depender de módulos de baixo nível — ambos devem depender de abstrações (interfaces), não de implementações concretas. É a base teórica por trás de injeção de dependência."
+  },
+  "padrao_singleton": {
+    "disciplina": "Engenharia_de_Software",
+    "tags": ["singleton", "padrão singleton"],
+    "definicao": "Singleton: padrão criacional que garante que uma classe tenha só uma instância em toda a aplicação, com um ponto de acesso global a ela. Usado com cautela — facilita acesso global, mas pode dificultar testes e esconder dependências."
+  },
+  "padrao_factory_method": {
+    "disciplina": "Engenharia_de_Software",
+    "tags": ["factory method", "fábrica", "padrão factory"],
+    "definicao": "Factory Method: padrão criacional que delega a criação de objetos a um método específico (em vez de usar `new` diretamente), permitindo que subclasses decidam qual classe concreta instanciar."
+  },
+  "padrao_strategy": {
+    "disciplina": "Engenharia_de_Software",
+    "tags": ["strategy", "padrão strategy", "padrão estratégia"],
+    "definicao": "Strategy: padrão comportamental que encapsula um algoritmo (ou família de algoritmos intercambiáveis) numa classe separada, permitindo trocar o comportamento em tempo de execução sem alterar o código que o usa."
+  },
+  "padrao_observer": {
+    "disciplina": "Engenharia_de_Software",
+    "tags": ["observer", "padrão observer", "observador", "publish subscribe"],
+    "definicao": "Observer: padrão comportamental onde um objeto (sujeito) mantém uma lista de dependentes (observadores) e notifica todos automaticamente quando seu estado muda — base de sistemas de eventos e publish/subscribe."
+  },
+  "padrao_decorator": {
+    "disciplina": "Engenharia_de_Software",
+    "tags": ["decorator", "padrão decorator", "decorador"],
+    "definicao": "Decorator: padrão estrutural que adiciona novas responsabilidades a um objeto dinamicamente, envolvendo-o numa camada extra, sem alterar sua classe original nem afetar outros objetos da mesma classe."
+  },
+  "padrao_adapter": {
+    "disciplina": "Engenharia_de_Software",
+    "tags": ["adapter", "padrão adapter", "adaptador"],
+    "definicao": "Adapter: padrão estrutural que converte a interface de uma classe existente para outra interface que o código cliente espera — permite que classes com interfaces incompatíveis trabalhem juntas sem alterar nenhuma das duas."
+  },
+  "tipos_teste": {
+    "disciplina": "Engenharia_de_Software",
+    "tags": ["teste unitário", "teste de integração", "teste e2e", "teste de aceitação", "tipos de teste"],
+    "definicao": "Teste unitário: testa uma unidade isolada de código (função/método), com dependências mockadas. Teste de integração: testa a interação real entre dois ou mais componentes (ex: código + banco de dados). Teste E2E (fim a fim): testa o fluxo completo do sistema, simulando o uso real, do início ao fim. Teste de aceitação: valida se o sistema atende aos requisitos de negócio definidos, geralmente do ponto de vista do usuário."
+  },
+  "clean_code_principios": {
+    "disciplina": "Engenharia_de_Software",
+    "tags": ["clean code", "código limpo", "boas práticas de código"],
+    "definicao": "Clean Code (princípios-chave): nomes de variáveis/funções/classes devem ser significativos e revelar intenção; funções devem ser pequenas e fazer uma coisa só; evitar comentários que só repetem o que o código já diz (prefira código autoexplicativo); eliminar duplicação (DRY — Don't Repeat Yourself); evitar efeitos colaterais escondidos numa função que parece fazer outra coisa."
   }
 }
