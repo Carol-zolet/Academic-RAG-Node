@@ -174,7 +174,7 @@ function buscarReferenciaCanonica(pergunta) {
 // timeout de request. Por isso as subpastas de cada nível são varridas em
 // paralelo com Promise.all — cada nível ainda espera o anterior terminar, mas
 // dentro de um nível todas as chamadas saem juntas.
-async function listarArquivosRecursivo(drive, folderId) {
+async function listarArquivosRecursivo(drive, folderId, caminho = '') {
     const arquivos = [];
     const res = await drive.files.list({
         q: `'${folderId}' in parents and trashed = false`,
@@ -187,12 +187,15 @@ async function listarArquivosRecursivo(drive, folderId) {
         if (item.mimeType === 'application/vnd.google-apps.folder') {
             subpastas.push(item);
         } else {
-            arquivos.push(item);
+            // Guarda o caminho da pasta junto com o arquivo — usado depois pra
+            // pontuar relevância (muita pergunta menciona a disciplina, não o
+            // nome exato do arquivo).
+            arquivos.push({ ...item, caminhoPasta: caminho });
         }
     }
 
     const resultadosSubpastas = await Promise.all(
-        subpastas.map(sp => listarArquivosRecursivo(drive, sp.id))
+        subpastas.map(sp => listarArquivosRecursivo(drive, sp.id, caminho ? `${caminho}/${sp.name}` : sp.name))
     );
     for (const lista of resultadosSubpastas) {
         arquivos.push(...lista);
@@ -213,6 +216,37 @@ function classificarArquivo(arquivo) {
     if (arquivo.mimeType === 'application/vnd.openxmlformats-officedocument.wordprocessingml.document') return 'docx';
     if (arquivo.name.toLowerCase().endsWith('.ipynb')) return 'notebook';
     return null;
+}
+
+const PALAVRAS_IGNORADAS = new Set([
+    'a', 'o', 'as', 'os', 'de', 'da', 'do', 'das', 'dos', 'em', 'no', 'na', 'nos', 'nas',
+    'para', 'por', 'com', 'sem', 'um', 'uma', 'uns', 'umas', 'e', 'ou', 'que', 'como',
+    'qual', 'quais', 'quando', 'onde', 'sobre', 'entre', 'ao', 'aos', 'à', 'às', 'é',
+    'são', 'foi', 'ser', 'estar', 'seu', 'sua', 'seus', 'suas', 'me', 'se', 'mais'
+]);
+
+// Remove acentos e normaliza pra minúsculo, pra "segurança" bater com
+// "seguranca" independente de como a pergunta ou o nome do arquivo/pasta
+// foram escritos.
+function normalizarTexto(texto) {
+    return texto.normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase();
+}
+
+function extrairPalavrasChave(pergunta) {
+    return normalizarTexto(pergunta)
+        .split(/[^a-z0-9]+/)
+        .filter(p => p.length > 2 && !PALAVRAS_IGNORADAS.has(p));
+}
+
+// Pontua um arquivo pela quantidade de palavras-chave da pergunta que
+// aparecem no nome do arquivo ou no caminho da pasta (ex: pergunta sobre
+// "join" tende a bater com a pasta "Banco_de_Dados" mesmo se o PDF não
+// tiver "join" no nome). Sem embeddings/busca vetorial — só matching de
+// string local, mesmo espírito do roteamento do glossário canônico.
+function pontuarRelevancia(arquivo, palavrasChave) {
+    if (palavrasChave.length === 0) return 0;
+    const alvo = normalizarTexto(`${arquivo.caminhoPasta} ${arquivo.name}`);
+    return palavrasChave.reduce((pontos, palavra) => pontos + (alvo.includes(palavra) ? 1 : 0), 0);
 }
 
 // Extrai o texto de um notebook Jupyter: só cells markdown/code (source),
@@ -260,7 +294,7 @@ async function extrairTextoDoArquivo(drive, arquivo, tipo) {
     return buffer.toString('utf8');
 }
 
-async function extrairTudoDoDrive() {
+async function extrairTudoDoDrive(pergunta) {
     const oauth2Client = new google.auth.OAuth2(
         process.env.GOOGLE_CLIENT_ID, 
         process.env.GOOGLE_CLIENT_SECRET, 
@@ -309,9 +343,20 @@ async function extrairTudoDoDrive() {
             console.log(`ℹ️ ${ignorados} arquivo(s) com formato não suportado ignorados (imagens, planilhas, vídeos etc.).`);
         }
 
-        // Processa os primeiros 8 arquivos suportados (de qualquer tipo) para
-        // manter o contexto dentro do limite da Groq.
-        for (const { arquivo, tipo } of arquivosSuportados.slice(0, 8)) {
+        // Ordena por relevância à pergunta (nome do arquivo + caminho da pasta)
+        // antes de cortar em 8 — sem isso, os 8 processados eram só os primeiros
+        // que a varredura encontrasse, sem relação nenhuma com o que foi
+        // perguntado. Pergunta genérica (score 0 em tudo) mantém a ordem
+        // original como fallback, em vez de retornar vazio.
+        const palavrasChave = extrairPalavrasChave(pergunta || '');
+        const arquivosOrdenados = [...arquivosSuportados].sort((a, b) =>
+            pontuarRelevancia(b.arquivo, palavrasChave) - pontuarRelevancia(a.arquivo, palavrasChave)
+        );
+        console.log(`📌 Arquivos selecionados (top 8 de ${arquivosOrdenados.length}): ${arquivosOrdenados.slice(0, 8).map(a => a.arquivo.name).join(', ')}`);
+
+        // Processa os primeiros 8 arquivos suportados (agora ordenados por
+        // relevância) para manter o contexto dentro do limite da Groq.
+        for (const { arquivo, tipo } of arquivosOrdenados.slice(0, 8)) {
             try {
                 const texto = await extrairTextoDoArquivo(drive, arquivo, tipo);
                 contextoExtraido += `\n--- MATÉRIA: ${arquivo.name} (${tipo}) ---\n${texto.substring(0, 3000)}\n`;
@@ -330,7 +375,7 @@ app.post('/chat', exigirAuthAPI, async (req, res) => {
     const { pergunta } = req.body;
     
     try {
-        const contexto = await extrairTudoDoDrive();
+        const contexto = await extrairTudoDoDrive(pergunta);
         const referenciaCanonica = buscarReferenciaCanonica(pergunta);
 
         // Chamada para o novo modelo Llama 3.3
