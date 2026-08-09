@@ -294,14 +294,16 @@ async function extrairTextoDoArquivo(drive, arquivo, tipo) {
     return buffer.toString('utf8');
 }
 
-async function extrairTudoDoDrive(pergunta) {
+// Monta o cliente autenticado do Drive a partir do tokens.json — extraído
+// pra função própria porque tanto extrairTudoDoDrive() quanto o endpoint
+// de refresh do cache precisam dele.
+function criarClienteDrive() {
     const oauth2Client = new google.auth.OAuth2(
-        process.env.GOOGLE_CLIENT_ID, 
-        process.env.GOOGLE_CLIENT_SECRET, 
+        process.env.GOOGLE_CLIENT_ID,
+        process.env.GOOGLE_CLIENT_SECRET,
         process.env.GOOGLE_REDIRECT_URI
     );
 
-    // Verificação de segurança para o tokens.json
     try {
         if (fs.existsSync('./tokens.json')) {
             const tokenData = fs.readFileSync('./tokens.json', 'utf8');
@@ -314,15 +316,43 @@ async function extrairTudoDoDrive(pergunta) {
         console.error("❌ Erro ao processar tokens.json:", err.message);
     }
 
-    const drive = google.drive({ version: 'v3', auth: oauth2Client });
+    return google.drive({ version: 'v3', auth: oauth2Client });
+}
 
-    console.log("🔍 Buscando materiais acadêmicos no Drive...");
+// Cache em memória da árvore de arquivos do Drive — sem isso, toda pergunta
+// refazia a varredura recursiva completa (~930 subpastas) do zero, mesmo
+// que nada tivesse mudado no Drive desde a última pergunta. TTL de 6h como
+// rede de segurança; POST /refresh-cache força atualização imediata (ex:
+// depois de adicionar material novo). Cache é perdido a cada restart do
+// processo (deploy no Render, por exemplo) — comportamento aceitável dado
+// o TTL curto e o endpoint de refresh manual.
+const CACHE_TTL_MS = 6 * 60 * 60 * 1000; // 6 horas
+let cacheArvoreArquivos = { dados: null, timestamp: 0 };
+
+async function obterArvoreArquivos(drive, forcarAtualizacao = false) {
+    const agora = Date.now();
+    const cacheValido = cacheArvoreArquivos.dados && (agora - cacheArvoreArquivos.timestamp) < CACHE_TTL_MS;
+
+    if (cacheValido && !forcarAtualizacao) {
+        const minutosAtras = Math.round((agora - cacheArvoreArquivos.timestamp) / 60000);
+        console.log(`♻️ Usando cache da árvore do Drive (${cacheArvoreArquivos.dados.length} arquivos, atualizado há ${minutosAtras} min).`);
+        return cacheArvoreArquivos.dados;
+    }
+
+    console.log(forcarAtualizacao ? "🔄 Refresh manual do cache solicitado..." : "🔍 Cache expirado ou vazio, varrendo o Drive...");
+    const arquivos = await listarArquivosRecursivo(drive, DISCIPLINAS_FOLDER_ID);
+    cacheArvoreArquivos = { dados: arquivos, timestamp: agora };
+    return arquivos;
+}
+
+async function extrairTudoDoDrive(pergunta) {
+    const drive = criarClienteDrive();
 
     try {
         // Restrito só à árvore da pasta "Disciplinas" (DISCIPLINAS_FOLDER_ID) — sem
         // o fallback antigo por nome ('Aula'/'Plano'), que buscava no Drive inteiro
         // e podia expor arquivos fora do escopo pretendido.
-        const arquivosDaArvore = await listarArquivosRecursivo(drive, DISCIPLINAS_FOLDER_ID);
+        const arquivosDaArvore = await obterArvoreArquivos(drive);
 
         let contextoExtraido = "";
 
@@ -405,6 +435,19 @@ Baseie-se nestes materiais: ${contexto}` },
     } catch (e) {
         console.error("❌ Erro na rota /chat:", e.message);
         res.status(500).json({ error: "Ocorreu um erro no processamento da sua dúvida." });
+    }
+});
+
+// Força a atualização do cache da árvore do Drive na hora — usar depois de
+// adicionar/remover material nas pastas, em vez de esperar o TTL de 6h.
+app.post('/refresh-cache', exigirAuthAPI, async (req, res) => {
+    try {
+        const drive = criarClienteDrive();
+        const arquivos = await obterArvoreArquivos(drive, /* forcarAtualizacao */ true);
+        res.json({ ok: true, arquivosIndexados: arquivos.length });
+    } catch (e) {
+        console.error("❌ Erro na rota /refresh-cache:", e.message);
+        res.status(500).json({ error: "Não foi possível atualizar o cache." });
     }
 });
 
