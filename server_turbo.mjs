@@ -5,6 +5,7 @@ import { google } from 'googleapis';
 import { marked } from 'marked';
 import Groq from 'groq-sdk';
 import { PDFParse } from 'pdf-parse';
+import mammoth from 'mammoth';
 import jwt from 'jsonwebtoken';
 import bcrypt from 'bcryptjs';
 import cookieParser from 'cookie-parser';
@@ -209,6 +210,7 @@ function classificarArquivo(arquivo) {
     if (arquivo.mimeType === 'text/plain') return 'txt';
     if (arquivo.mimeType === 'text/markdown') return 'md';
     if (arquivo.mimeType === 'text/csv') return 'csv';
+    if (arquivo.mimeType === 'application/vnd.openxmlformats-officedocument.wordprocessingml.document') return 'docx';
     if (arquivo.name.toLowerCase().endsWith('.ipynb')) return 'notebook';
     return null;
 }
@@ -229,7 +231,8 @@ function extrairTextoNotebook(bufferJson) {
 }
 
 // Baixa e extrai o texto de um arquivo já classificado. PDF usa o parser
-// dedicado; txt/md/csv são texto puro; notebook usa o extrator acima.
+// dedicado; txt/md/csv são texto puro; notebook usa o extrator acima; docx
+// usa o mammoth.
 async function extrairTextoDoArquivo(drive, arquivo, tipo) {
     const res = await drive.files.get({ fileId: arquivo.id, alt: 'media' }, { responseType: 'arraybuffer' });
     const buffer = Buffer.from(res.data);
@@ -246,6 +249,11 @@ async function extrairTextoDoArquivo(drive, arquivo, tipo) {
 
     if (tipo === 'notebook') {
         return extrairTextoNotebook(buffer);
+    }
+
+    if (tipo === 'docx') {
+        const resultado = await mammoth.extractRawText({ buffer });
+        return resultado.value;
     }
 
     // txt, md, csv
