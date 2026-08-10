@@ -173,5 +173,60 @@
     "disciplina": "Disciplina_Integradora",
     "tags": ["mvp", "produto mínimo viável", "protótipo"],
     "definicao": "MVP (Minimum Viable Product / Produto Mínimo Viável): a versão mais simples de um produto que já entrega valor real ao usuário e permite validar hipóteses de negócio com o mínimo esforço de desenvolvimento. Diferente de um Protótipo, que normalmente não é funcional nem usado por usuários reais — serve só pra visualizar/testar uma ideia antes de construir de fato."
+  },
+  "pilha_fila": {
+    "disciplina": "Logica_e_Programacao",
+    "tags": ["pilha", "fila", "stack", "queue", "lifo", "fifo"],
+    "definicao": "Pilha (Stack): estrutura LIFO (Last In, First Out) — o último elemento inserido é o primeiro a ser removido (ex: pilha de pratos). Operações principais: push (inserir no topo) e pop (remover do topo). Fila (Queue): estrutura FIFO (First In, First Out) — o primeiro elemento inserido é o primeiro a ser removido (ex: fila de banco). Operações principais: enqueue (inserir no fim) e dequeue (remover do início)."
+  },
+  "lista_array": {
+    "disciplina": "Logica_e_Programacao",
+    "tags": ["lista encadeada", "linked list", "array", "vetor"],
+    "definicao": "Array/Vetor: elementos armazenados em posições contíguas de memória, com acesso direto por índice em O(1) — mas inserir/remover no meio exige deslocar elementos, O(n). Lista Encadeada (Linked List): elementos (nós) espalhados na memória, cada um apontando pro próximo — inserir/remover é O(1) se já se tem a referência do nó, mas acessar um elemento por posição exige percorrer a lista, O(n)."
+  },
+  "arvore_bst": {
+    "disciplina": "Logica_e_Programacao",
+    "tags": ["árvore binária", "árvore binária de busca", "bst", "binary search tree"],
+    "definicao": "Árvore Binária: estrutura hierárquica onde cada nó tem no máximo dois filhos (esquerdo e direito) — sem regra sobre a ordem dos valores. Árvore Binária de Busca (BST): é uma árvore binária COM uma regra adicional: para cada nó, todos os valores da subárvore esquerda são menores e todos os da subárvore direita são maiores. Essa regra é o que permite busca em O(log n) numa árvore balanceada (numa árvore binária comum, sem essa regra, não há como buscar de forma eficiente)."
+  },
+  "grafo": {
+    "disciplina": "Logica_e_Programacao",
+    "tags": ["grafo", "vértice", "aresta", "grafo direcionado", "grafo ponderado"],
+    "definicao": "Grafo: estrutura formada por vértices (nós) conectados por arestas (ligações). Grafo direcionado: as arestas têm sentido (A→B não implica B→A). Grafo não-direcionado: as arestas não têm sentido (a conexão vale nos dois sentidos). Grafo ponderado: cada aresta tem um peso/custo associado (ex: distância, tempo)."
+  },
+  "notacao_big_o": {
+    "disciplina": "Logica_e_Programacao",
+    "tags": ["big-o", "notação big-o", "complexidade de tempo", "complexidade de algoritmo"],
+    "definicao": "Notação Big-O: descreve como o tempo (ou espaço) de execução de um algoritmo cresce conforme o tamanho da entrada (n) aumenta, no pior caso. Principais classes, da mais rápida pra mais lenta: O(1) constante (não depende de n), O(log n) logarítmica (ex: busca binária), O(n) linear (ex: percorrer uma lista uma vez), O(n log n) (ex: bons algoritmos de ordenação), O(n²) quadrática (ex: loops aninhados sobre a mesma entrada)."
+  },
+  "recursao": {
+    "disciplina": "Logica_e_Programacao",
+    "tags": ["recursão", "caso base", "caso recursivo", "função recursiva"],
+    "definicao": "Recursão: uma função que chama a si mesma pra resolver um problema, quebrando-o em subproblemas menores do mesmo tipo. Precisa de dois elementos: caso base (a condição mais simples, que para a recursão e retorna direto, sem nova chamada) e caso recursivo (a chamada da função a si mesma com uma entrada menor/mais próxima do caso base). Sem caso base, a recursão nunca para (estouro de pilha)."
+  },
+  "busca_linear_binaria": {
+    "disciplina": "Logica_e_Programacao",
+    "tags": ["busca linear", "busca binária", "busca sequencial"],
+    "definicao": "Busca Linear: percorre os elementos um por um até achar o valor procurado (ou chegar ao fim) — funciona em qualquer lista, mesmo desordenada, complexidade O(n). Busca Binária: divide repetidamente o espaço de busca ao meio, comparando com o elemento do meio — muito mais rápida, O(log n), mas exige que a lista esteja ORDENADA antes de buscar."
+  },
+  "algoritmos_ordenacao": {
+    "disciplina": "Logica_e_Programacao",
+    "tags": ["bubble sort", "quick sort", "merge sort", "algoritmo de ordenação"],
+    "definicao": "Bubble Sort: compara pares de elementos adjacentes e troca se estiverem fora de ordem, repetindo várias passadas — simples, mas O(n²), ineficiente pra listas grandes. Quick Sort: escolhe um pivô e particiona a lista em menores/maiores que o pivô, recursivamente — O(n log n) em média, mas O(n²) no pior caso (pivô mal escolhido). Merge Sort: divide a lista ao meio recursivamente até sobrar 1 elemento, depois mescla as partes já ordenadas — O(n log n) garantido, mas usa mais memória que o Quick Sort."
+  },
+  "paradigmas_programacao": {
+    "disciplina": "Logica_e_Programacao",
+    "tags": ["paradigma de programação", "programação imperativa", "programação funcional", "programação orientada a objetos"],
+    "definicao": "Programação Imperativa: descreve uma sequência de comandos que alteram o estado do programa passo a passo (ex: loops com variáveis sendo modificadas). Programação Funcional: trata a computação como avaliação de funções matemáticas, evitando estado mutável e efeitos colaterais — funções puras recebem entrada e retornam saída, sem alterar nada fora delas. Programação Orientada a Objetos: organiza o código em objetos que combinam dados (atributos) e comportamento (métodos), usando conceitos como herança, encapsulamento e polimorfismo."
+  },
+  "tabela_hash": {
+    "disciplina": "Logica_e_Programacao",
+    "tags": ["tabela hash", "hash table", "função hash", "hashmap"],
+    "definicao": "Tabela Hash (Hash Table): estrutura que mapeia chaves a valores usando uma função hash, que converte a chave num índice de um array interno — permite busca, inserção e remoção em O(1) em média. Colisões (duas chaves diferentes gerando o mesmo índice) são tratadas por técnicas como encadeamento (lista em cada posição) ou endereçamento aberto."
+  },
+  "pilha_execucao_heap": {
+    "disciplina": "Logica_e_Programacao",
+    "tags": ["call stack", "pilha de execução", "heap de memória", "stack overflow"],
+    "definicao": "Pilha de Execução (Call Stack): estrutura que o programa usa pra rastrear chamadas de função — cada chamada empilha um novo quadro (frame) com variáveis locais; quando a função retorna, o quadro é removido. Recursão sem caso base esgota essa pilha (stack overflow). Heap (de memória, diferente da estrutura de dados 'heap'/fila de prioridade): região de memória usada pra alocação dinâmica (objetos, dados cujo tamanho não é conhecido em tempo de compilação) — gerenciada separadamente da pilha de execução."
   }
 }
