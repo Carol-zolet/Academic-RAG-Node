@@ -123,5 +123,55 @@
     "disciplina": "Engenharia_de_Software",
     "tags": ["clean code", "código limpo", "boas práticas de código"],
     "definicao": "Clean Code (princípios-chave): nomes de variáveis/funções/classes devem ser significativos e revelar intenção; funções devem ser pequenas e fazer uma coisa só; evitar comentários que só repetem o que o código já diz (prefira código autoexplicativo); eliminar duplicação (DRY — Don't Repeat Yourself); evitar efeitos colaterais escondidos numa função que parece fazer outra coisa."
+  },
+  "ci_cd": {
+    "disciplina": "DevOps",
+    "tags": ["ci/cd", "integração contínua", "entrega contínua", "implantação contínua", "continuous deployment", "continuous delivery"],
+    "definicao": "CI (Integração Contínua): integrar o código de todos os desenvolvedores num repositório compartilhado com frequência, com build e testes automatizados a cada integração, pra detectar problemas cedo. Entrega Contínua (Continuous Delivery): estende a CI garantindo que o código esteja sempre num estado implantável após os testes — mas o deploy em produção ainda é uma decisão/passo manual. Implantação Contínua (Continuous Deployment): vai além — toda mudança que passa nos testes automatizados é implantada em produção automaticamente, sem intervenção manual."
+  },
+  "containerizacao": {
+    "disciplina": "DevOps",
+    "tags": ["contêiner", "container", "docker", "máquina virtual", "vm"],
+    "definicao": "Contêiner: empacota uma aplicação e suas dependências isoladas no nível do sistema operacional, compartilhando o kernel do host — leve, rápido de iniciar (ex: Docker). Máquina Virtual (VM): virtualiza hardware completo, rodando seu próprio sistema operacional inteiro sobre um hypervisor — mais pesada, mais isolada, mais lenta de iniciar."
+  },
+  "infraestrutura_como_codigo": {
+    "disciplina": "DevOps",
+    "tags": ["iac", "infraestrutura como código", "terraform"],
+    "definicao": "Infraestrutura como Código (IaC): gerenciar e provisionar infraestrutura (servidores, redes, bancos de dados) através de arquivos de configuração declarativos versionados (ex: Terraform, CloudFormation), em vez de configuração manual — permite reproduzir, versionar e revisar mudanças de infraestrutura como código de aplicação."
+  },
+  "pipeline_cicd": {
+    "disciplina": "DevOps",
+    "tags": ["pipeline", "pipeline de ci/cd", "etapas do pipeline"],
+    "definicao": "Pipeline de CI/CD: sequência automatizada de etapas que o código passa do commit até a produção. Um fluxo típico: build (compilar/empacotar) → testes automatizados → análise estática/segurança → deploy em staging → deploy em produção — mas a ordem e as etapas variam conforme o projeto; cada etapa precisa passar pra avançar pra próxima."
+  },
+  "estrategias_deploy": {
+    "disciplina": "DevOps",
+    "tags": ["blue-green", "canary", "rolling update", "estratégia de deploy", "estratégia de implantação"],
+    "definicao": "Blue-Green Deployment: mantém duas versões idênticas do ambiente (azul = atual, verde = nova) e alterna o tráfego de uma vez só — rollback é instantâneo (volta pro azul). Canary Release: libera a nova versão gradualmente pra uma pequena fração dos usuários primeiro, monitora, e só depois expande. Rolling Update: substitui as instâncias antigas pelas novas gradualmente, uma (ou um pequeno grupo) de cada vez, sem dois ambientes completos rodando em paralelo."
+  },
+  "orquestracao_conteineres": {
+    "disciplina": "DevOps",
+    "tags": ["orquestração de contêineres", "kubernetes", "k8s"],
+    "definicao": "Orquestração de contêineres (ex: Kubernetes): automatiza o deploy, escalonamento, balanceamento de carga e recuperação de falhas de múltiplos contêineres num cluster de máquinas — reinicia contêineres que caem, distribui carga entre réplicas, aloca recursos."
+  },
+  "observabilidade": {
+    "disciplina": "DevOps",
+    "tags": ["observabilidade", "logs", "métricas", "traces", "rastreamento distribuído"],
+    "definicao": "Os três pilares da observabilidade: Logs (registros de eventos discretos com timestamp e contexto — bons pra investigar um erro específico). Métricas (valores numéricos agregados ao longo do tempo, tipo uso de CPU ou tempo de resposta médio — boas pra monitorar tendências e alertar). Traces (rastreiam o caminho completo de uma requisição através de múltiplos serviços — bons pra entender latência e dependências em sistemas distribuídos)."
+  },
+  "versionamento_semantico": {
+    "disciplina": "DevOps",
+    "tags": ["semver", "versionamento semântico", "major minor patch"],
+    "definicao": "Versionamento Semântico (SemVer): numeração de versões no formato MAJOR.MINOR.PATCH (ex: 2.4.1). MAJOR incrementa em mudanças incompatíveis (breaking changes). MINOR incrementa ao adicionar funcionalidade compatível com versões anteriores. PATCH incrementa em correções de bugs compatíveis."
+  },
+  "sprint_scrum": {
+    "disciplina": "Disciplina_Integradora",
+    "tags": ["sprint", "scrum", "sprint planning", "sprint review", "retrospectiva"],
+    "definicao": "Sprint (Scrum): período de tempo fixo e curto (tipicamente 1-4 semanas) durante o qual o time entrega um incremento potencialmente utilizável do produto. Começa com o Sprint Planning (o que será feito) e termina com a Sprint Review (demonstração do que foi feito) e a Retrospectiva (o que pode melhorar no processo)."
+  },
+  "mvp": {
+    "disciplina": "Disciplina_Integradora",
+    "tags": ["mvp", "produto mínimo viável", "protótipo"],
+    "definicao": "MVP (Minimum Viable Product / Produto Mínimo Viável): a versão mais simples de um produto que já entrega valor real ao usuário e permite validar hipóteses de negócio com o mínimo esforço de desenvolvimento. Diferente de um Protótipo, que normalmente não é funcional nem usado por usuários reais — serve só pra visualizar/testar uma ideia antes de construir de fato."
   }
 }
