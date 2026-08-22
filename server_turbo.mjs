@@ -427,7 +427,7 @@ TOM: direto e confiante, como um mentor sênior que já sabe a resposta — sem 
 Baseie-se nestes materiais: ${contexto}` },
                 { role: 'user', content: pergunta }
             ],
-            model: 'llama-3.3-70b-versatile',
+            model: 'openai/gpt-oss-120b',
             temperature: 0.7,
         });
 
