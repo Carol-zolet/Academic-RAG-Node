@@ -385,19 +385,23 @@ async function extrairTudoDoDrive(pergunta) {
         console.log(`📌 Arquivos selecionados (top 8 de ${arquivosOrdenados.length}): ${arquivosOrdenados.slice(0, 8).map(a => a.arquivo.name).join(', ')}`);
 
         // Processa os primeiros 8 arquivos suportados (agora ordenados por
-        // relevância) para manter o contexto dentro do limite da Groq.
+        // relevância) para manter o contexto dentro do limite da Groq. Só entra
+        // em "fontes" o que realmente foi extraído com sucesso — se um arquivo
+        // falhar a leitura, ele não fez parte do contexto de verdade.
+        const fontes = [];
         for (const { arquivo, tipo } of arquivosOrdenados.slice(0, 8)) {
             try {
                 const texto = await extrairTextoDoArquivo(drive, arquivo, tipo);
                 contextoExtraido += `\n--- MATÉRIA: ${arquivo.name} (${tipo}) ---\n${texto.substring(0, 3000)}\n`;
+                fontes.push(arquivo.name);
             } catch (e) {
                 console.log(`Pulei o arquivo ${arquivo.name} por erro de leitura: ${e.message}`);
             }
         }
-        return contextoExtraido;
+        return { contexto: contextoExtraido, fontes };
     } catch (error) {
         console.error("❌ Erro ao listar arquivos do Drive:", error.message);
-        return "Erro ao acessar materiais do Drive.";
+        return { contexto: "Erro ao acessar materiais do Drive.", fontes: [] };
     }
 }
 
@@ -405,7 +409,7 @@ app.post('/chat', exigirAuthAPI, async (req, res) => {
     const { pergunta } = req.body;
     
     try {
-        const contexto = await extrairTudoDoDrive(pergunta);
+        const { contexto, fontes } = await extrairTudoDoDrive(pergunta);
         const referenciaCanonica = buscarReferenciaCanonica(pergunta);
 
         // Chamada para o novo modelo Llama 3.3
@@ -431,7 +435,7 @@ Baseie-se nestes materiais: ${contexto}` },
             temperature: 0.7,
         });
 
-        res.json({ resposta: completion.choices[0].message.content });
+        res.json({ resposta: completion.choices[0].message.content, fontes });
     } catch (e) {
         console.error("❌ Erro na rota /chat:", e.message);
         res.status(500).json({ error: "Ocorreu um erro no processamento da sua dúvida." });
@@ -516,6 +520,8 @@ app.get('/', exigirAuthPagina, (req, res) => {
             .msg-actions { display: flex; gap: 0.4rem; margin-top: 0.5rem; opacity: 0; transition: opacity 0.15s ease; }
             .msg-row.bot:hover .msg-actions, .msg-row.bot:focus-within .msg-actions, .msg-actions.copiado { opacity: 1; }
             @media (hover: none) { .msg-actions { opacity: 1; } }
+
+            .msg-fontes { margin-top: 0.5rem; font-size: 0.72rem; color: var(--text-muted); line-height: 1.4; }
 
             .copy-btn { display: inline-flex; align-items: center; gap: 0.3rem; background: transparent; border: 1px solid var(--border); color: var(--text-muted); font-size: 0.75rem; padding: 0.25rem 0.55rem; border-radius: 6px; cursor: pointer; transition: color 0.15s, border-color 0.15s; }
             .copy-btn:hover { color: var(--text); border-color: var(--accent); }
@@ -627,6 +633,15 @@ app.get('/', exigirAuthPagina, (req, res) => {
                     respostasRaw[msgId] = texto;
 
                     botRow.querySelector('.msg-bubble').innerHTML = renderMarkdown(texto);
+
+                    // Fontes consultadas (arquivos que entraram no contexto desta resposta).
+                    // textContent, não innerHTML — nomes de arquivo vêm do Drive, dado externo.
+                    if (data.fontes && data.fontes.length > 0) {
+                        const fontesEl = document.createElement('div');
+                        fontesEl.className = 'msg-fontes';
+                        fontesEl.textContent = '📎 Fontes: ' + data.fontes.join(', ');
+                        botRow.querySelector('.msg-content-wrap').appendChild(fontesEl);
+                    }
 
                     const actions = document.createElement('div');
                     actions.className = 'msg-actions';
