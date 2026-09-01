@@ -1,7 +1,7 @@
 import express from 'express';
 import fs from 'fs';
 import dotenv from 'dotenv';
-import { google } from 'googleapis';
+import { S3Client, GetObjectCommand, ListObjectsV2Command } from '@aws-sdk/client-s3';
 import { marked } from 'marked';
 import Groq from 'groq-sdk';
 import { PDFParse } from 'pdf-parse';
@@ -16,7 +16,7 @@ const app = express();
 // Configuração da porta para o Render (process.env.PORT)
 const PORT = process.env.PORT || 3000;
 const groq = new Groq({ apiKey: process.env.GROQ_API_KEY });
-const DISCIPLINAS_FOLDER_ID = '178JLC2zNL5c6bd9on-5fmPYrm3qnEDmn';
+const R2_BUCKET = process.env.R2_BUCKET_NAME;
 
 const JWT_SECRET = process.env.JWT_SECRET;
 if (!JWT_SECRET || !process.env.APP_USERNAME || !process.env.APP_PASSWORD_HASH) {
@@ -145,7 +145,7 @@ app.get('/login', (req, res) => {
 
 // Glossário de definições formais canônicas — fonte de verdade para conceitos
 // com risco de o modelo "lembrar errado" (formas normais, tipos de JOIN etc.),
-// em vez de depender só do material bruto extraído dos PDFs do Drive.
+// em vez de depender só do material bruto extraído dos PDFs do bucket.
 let glossarioFormal = {};
 try {
     glossarioFormal = JSON.parse(fs.readFileSync('./glossario_formal.json', 'utf8'));
@@ -165,56 +165,41 @@ function buscarReferenciaCanonica(pergunta) {
     return entradas.map(e => `- ${e.definicao}`).join('\n');
 }
 
-// Varre recursivamente uma pasta do Drive e devolve só os arquivos (não pastas)
-// encontrados em qualquer nível abaixo dela — restringe a busca à árvore de
-// DISCIPLINAS_FOLDER_ID, em vez de depender de um filtro de nome no Drive inteiro.
-//
-// A árvore real tem ~930 subpastas (não é só um nível de "disciplinas"), então
-// varrer sequencialmente (um await por vez) demora minutos e estoura qualquer
-// timeout de request. Por isso as subpastas de cada nível são varridas em
-// paralelo com Promise.all — cada nível ainda espera o anterior terminar, mas
-// dentro de um nível todas as chamadas saem juntas.
-async function listarArquivosRecursivo(drive, folderId, caminho = '') {
+// Lista todos os objetos do bucket R2 (S3-compatível). Diferente do Drive,
+// não existe hierarquia real de pastas pra percorrer recursivamente — cada
+// "Key" já é o caminho completo (ex: Banco_de_Dados/Aula_03/arquivo.pdf), e
+// uma chamada paginada traz a árvore inteira de uma vez.
+async function listarArquivosR2(s3) {
     const arquivos = [];
-    const res = await drive.files.list({
-        q: `'${folderId}' in parents and trashed = false`,
-        fields: 'files(id, name, mimeType)',
-        pageSize: 200
-    });
+    let continuationToken;
 
-    const subpastas = [];
-    for (const item of res.data.files) {
-        if (item.mimeType === 'application/vnd.google-apps.folder') {
-            subpastas.push(item);
-        } else {
-            // Guarda o caminho da pasta junto com o arquivo — usado depois pra
-            // pontuar relevância (muita pergunta menciona a disciplina, não o
-            // nome exato do arquivo).
-            arquivos.push({ ...item, caminhoPasta: caminho });
+    do {
+        const res = await s3.send(new ListObjectsV2Command({
+            Bucket: R2_BUCKET,
+            ContinuationToken: continuationToken,
+        }));
+        for (const obj of res.Contents || []) {
+            const partes = obj.Key.split('/');
+            const name = partes.pop();
+            arquivos.push({ key: obj.Key, name, caminhoPasta: partes.join('/') });
         }
-    }
-
-    const resultadosSubpastas = await Promise.all(
-        subpastas.map(sp => listarArquivosRecursivo(drive, sp.id, caminho ? `${caminho}/${sp.name}` : sp.name))
-    );
-    for (const lista of resultadosSubpastas) {
-        arquivos.push(...lista);
-    }
+        continuationToken = res.NextContinuationToken;
+    } while (continuationToken);
 
     return arquivos;
 }
 
-// Classifica um arquivo do Drive num tipo suportado de extração, ou null se
-// não for suportado. .ipynb e .data compartilham o mesmo mimeType genérico
-// (application/octet-stream) no Drive, então notebook é identificado pela
-// extensão do nome, não pelo mimeType.
+// Classifica um arquivo num tipo suportado de extração, ou null se não for
+// suportado — pela extensão do nome (o R2 não reporta mimeType de forma
+// confiável na listagem, e a extensão já é suficiente e mais simples).
 function classificarArquivo(arquivo) {
-    if (arquivo.mimeType === 'application/pdf') return 'pdf';
-    if (arquivo.mimeType === 'text/plain') return 'txt';
-    if (arquivo.mimeType === 'text/markdown') return 'md';
-    if (arquivo.mimeType === 'text/csv') return 'csv';
-    if (arquivo.mimeType === 'application/vnd.openxmlformats-officedocument.wordprocessingml.document') return 'docx';
-    if (arquivo.name.toLowerCase().endsWith('.ipynb')) return 'notebook';
+    const nome = arquivo.name.toLowerCase();
+    if (nome.endsWith('.pdf')) return 'pdf';
+    if (nome.endsWith('.txt')) return 'txt';
+    if (nome.endsWith('.md')) return 'md';
+    if (nome.endsWith('.csv')) return 'csv';
+    if (nome.endsWith('.docx')) return 'docx';
+    if (nome.endsWith('.ipynb')) return 'notebook';
     return null;
 }
 
@@ -267,9 +252,9 @@ function extrairTextoNotebook(bufferJson) {
 // Baixa e extrai o texto de um arquivo já classificado. PDF usa o parser
 // dedicado; txt/md/csv são texto puro; notebook usa o extrator acima; docx
 // usa o mammoth.
-async function extrairTextoDoArquivo(drive, arquivo, tipo) {
-    const res = await drive.files.get({ fileId: arquivo.id, alt: 'media' }, { responseType: 'arraybuffer' });
-    const buffer = Buffer.from(res.data);
+async function extrairTextoDoArquivo(s3, arquivo, tipo) {
+    const res = await s3.send(new GetObjectCommand({ Bucket: R2_BUCKET, Key: arquivo.key }));
+    const buffer = Buffer.from(await res.Body.transformToByteArray());
 
     if (tipo === 'pdf') {
         const parser = new PDFParse({ data: buffer });
@@ -294,65 +279,50 @@ async function extrairTextoDoArquivo(drive, arquivo, tipo) {
     return buffer.toString('utf8');
 }
 
-// Monta o cliente autenticado do Drive a partir do tokens.json — extraído
-// pra função própria porque tanto extrairTudoDoDrive() quanto o endpoint
+// Monta o cliente S3 (R2) a partir das credenciais no .env/Render — extraído
+// pra função própria porque tanto extrairContextoDoR2() quanto o endpoint
 // de refresh do cache precisam dele.
-function criarClienteDrive() {
-    const oauth2Client = new google.auth.OAuth2(
-        process.env.GOOGLE_CLIENT_ID,
-        process.env.GOOGLE_CLIENT_SECRET,
-        process.env.GOOGLE_REDIRECT_URI
-    );
-
-    try {
-        if (fs.existsSync('./tokens.json')) {
-            const tokenData = fs.readFileSync('./tokens.json', 'utf8');
-            oauth2Client.setCredentials(JSON.parse(tokenData));
-            console.log("✅ Tokens do Google carregados com sucesso.");
-        } else {
-            console.error("⚠️ Aviso: tokens.json não encontrado. Verifique os Secret Files no Render.");
-        }
-    } catch (err) {
-        console.error("❌ Erro ao processar tokens.json:", err.message);
-    }
-
-    return google.drive({ version: 'v3', auth: oauth2Client });
+function criarClienteS3() {
+    return new S3Client({
+        region: 'auto',
+        endpoint: process.env.R2_ENDPOINT,
+        credentials: {
+            accessKeyId: process.env.R2_ACCESS_KEY_ID,
+            secretAccessKey: process.env.R2_SECRET_ACCESS_KEY,
+        },
+    });
 }
 
-// Cache em memória da árvore de arquivos do Drive — sem isso, toda pergunta
-// refazia a varredura recursiva completa (~930 subpastas) do zero, mesmo
-// que nada tivesse mudado no Drive desde a última pergunta. TTL de 6h como
-// rede de segurança; POST /refresh-cache força atualização imediata (ex:
-// depois de adicionar material novo). Cache é perdido a cada restart do
-// processo (deploy no Render, por exemplo) — comportamento aceitável dado
-// o TTL curto e o endpoint de refresh manual.
+// Cache em memória da árvore de arquivos do bucket — sem isso, toda pergunta
+// refazia a listagem completa do zero. TTL de 6h como rede de segurança;
+// POST /refresh-cache força atualização imediata (ex: depois de adicionar
+// material novo). Cache é perdido a cada restart do processo (deploy no
+// Render, por exemplo) — comportamento aceitável dado o TTL curto e o
+// endpoint de refresh manual.
 const CACHE_TTL_MS = 6 * 60 * 60 * 1000; // 6 horas
 let cacheArvoreArquivos = { dados: null, timestamp: 0 };
 
-async function obterArvoreArquivos(drive, forcarAtualizacao = false) {
+async function obterArvoreArquivos(s3, forcarAtualizacao = false) {
     const agora = Date.now();
     const cacheValido = cacheArvoreArquivos.dados && (agora - cacheArvoreArquivos.timestamp) < CACHE_TTL_MS;
 
     if (cacheValido && !forcarAtualizacao) {
         const minutosAtras = Math.round((agora - cacheArvoreArquivos.timestamp) / 60000);
-        console.log(`♻️ Usando cache da árvore do Drive (${cacheArvoreArquivos.dados.length} arquivos, atualizado há ${minutosAtras} min).`);
+        console.log(`♻️ Usando cache da árvore do R2 (${cacheArvoreArquivos.dados.length} arquivos, atualizado há ${minutosAtras} min).`);
         return cacheArvoreArquivos.dados;
     }
 
-    console.log(forcarAtualizacao ? "🔄 Refresh manual do cache solicitado..." : "🔍 Cache expirado ou vazio, varrendo o Drive...");
-    const arquivos = await listarArquivosRecursivo(drive, DISCIPLINAS_FOLDER_ID);
+    console.log(forcarAtualizacao ? "🔄 Refresh manual do cache solicitado..." : "🔍 Cache expirado ou vazio, listando o bucket R2...");
+    const arquivos = await listarArquivosR2(s3);
     cacheArvoreArquivos = { dados: arquivos, timestamp: agora };
     return arquivos;
 }
 
-async function extrairTudoDoDrive(pergunta) {
-    const drive = criarClienteDrive();
+async function extrairContextoDoR2(pergunta) {
+    const s3 = criarClienteS3();
 
     try {
-        // Restrito só à árvore da pasta "Disciplinas" (DISCIPLINAS_FOLDER_ID) — sem
-        // o fallback antigo por nome ('Aula'/'Plano'), que buscava no Drive inteiro
-        // e podia expor arquivos fora do escopo pretendido.
-        const arquivosDaArvore = await obterArvoreArquivos(drive);
+        const arquivosDaArvore = await obterArvoreArquivos(s3);
 
         let contextoExtraido = "";
 
@@ -391,7 +361,7 @@ async function extrairTudoDoDrive(pergunta) {
         const fontes = [];
         for (const { arquivo, tipo } of arquivosOrdenados.slice(0, 8)) {
             try {
-                const texto = await extrairTextoDoArquivo(drive, arquivo, tipo);
+                const texto = await extrairTextoDoArquivo(s3, arquivo, tipo);
                 contextoExtraido += `\n--- MATÉRIA: ${arquivo.name} (${tipo}) ---\n${texto.substring(0, 3000)}\n`;
                 fontes.push(arquivo.name);
             } catch (e) {
@@ -400,16 +370,16 @@ async function extrairTudoDoDrive(pergunta) {
         }
         return { contexto: contextoExtraido, fontes };
     } catch (error) {
-        console.error("❌ Erro ao listar arquivos do Drive:", error.message);
-        return { contexto: "Erro ao acessar materiais do Drive.", fontes: [] };
+        console.error("❌ Erro ao listar arquivos do R2:", error.message);
+        return { contexto: "Erro ao acessar materiais do R2.", fontes: [] };
     }
 }
 
 app.post('/chat', exigirAuthAPI, async (req, res) => {
     const { pergunta } = req.body;
-    
+
     try {
-        const { contexto, fontes } = await extrairTudoDoDrive(pergunta);
+        const { contexto, fontes } = await extrairContextoDoR2(pergunta);
         const referenciaCanonica = buscarReferenciaCanonica(pergunta);
 
         // Chamada para o novo modelo Llama 3.3
@@ -442,12 +412,12 @@ Baseie-se nestes materiais: ${contexto}` },
     }
 });
 
-// Força a atualização do cache da árvore do Drive na hora — usar depois de
-// adicionar/remover material nas pastas, em vez de esperar o TTL de 6h.
+// Força a atualização do cache da árvore do bucket na hora — usar depois de
+// adicionar/remover material, em vez de esperar o TTL de 6h.
 app.post('/refresh-cache', exigirAuthAPI, async (req, res) => {
     try {
-        const drive = criarClienteDrive();
-        const arquivos = await obterArvoreArquivos(drive, /* forcarAtualizacao */ true);
+        const s3 = criarClienteS3();
+        const arquivos = await obterArvoreArquivos(s3, /* forcarAtualizacao */ true);
         res.json({ ok: true, arquivosIndexados: arquivos.length });
     } catch (e) {
         console.error("❌ Erro na rota /refresh-cache:", e.message);
@@ -635,7 +605,7 @@ app.get('/', exigirAuthPagina, (req, res) => {
                     botRow.querySelector('.msg-bubble').innerHTML = renderMarkdown(texto);
 
                     // Fontes consultadas (arquivos que entraram no contexto desta resposta).
-                    // textContent, não innerHTML — nomes de arquivo vêm do Drive, dado externo.
+                    // textContent, não innerHTML — nomes de arquivo vêm do bucket, dado externo.
                     if (data.fontes && data.fontes.length > 0) {
                         const fontesEl = document.createElement('div');
                         fontesEl.className = 'msg-fontes';
