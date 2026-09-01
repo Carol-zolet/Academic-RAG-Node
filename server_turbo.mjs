@@ -9,10 +9,15 @@ import mammoth from 'mammoth';
 import jwt from 'jsonwebtoken';
 import bcrypt from 'bcryptjs';
 import cookieParser from 'cookie-parser';
+import rateLimit from 'express-rate-limit';
 
 dotenv.config();
 
 const app = express();
+// O Render fica atrás de um proxy reverso — sem isso, o Express (e o rate
+// limiter) veria a mesma IP do proxy pra todo mundo, em vez da IP real de
+// cada visitante.
+app.set('trust proxy', 1);
 // Configuração da porta para o Render (process.env.PORT)
 const PORT = process.env.PORT || 3000;
 const groq = new Groq({ apiKey: process.env.GROQ_API_KEY });
@@ -25,6 +30,27 @@ if (!JWT_SECRET || !process.env.APP_USERNAME || !process.env.APP_PASSWORD_HASH) 
 
 app.use(express.json());
 app.use(cookieParser());
+
+// --- RATE LIMITING ---
+
+// /login: no máximo 5 tentativas por IP a cada 15 min — impede força bruta na senha.
+const loginLimiter = rateLimit({
+    windowMs: 15 * 60 * 1000,
+    max: 5,
+    standardHeaders: true,
+    legacyHeaders: false,
+    message: { error: 'Muitas tentativas de login. Aguarde alguns minutos e tente de novo.' },
+});
+
+// /chat: no máximo 30 requisições por IP a cada 15 min — folgado pro uso normal,
+// mas evita que um loop/abuso estoure a cota diária do Groq.
+const chatLimiter = rateLimit({
+    windowMs: 15 * 60 * 1000,
+    max: 30,
+    standardHeaders: true,
+    legacyHeaders: false,
+    message: { error: 'Muitas perguntas em pouco tempo. Aguarde alguns minutos e tente de novo.' },
+});
 
 // --- AUTENTICAÇÃO (login único, sem cadastro — só a Caroline usa este app) ---
 
@@ -51,7 +77,7 @@ function exigirAuthAPI(req, res, next) {
     return res.status(401).json({ error: 'Não autenticado. Faça login novamente.' });
 }
 
-app.post('/login', async (req, res) => {
+app.post('/login', loginLimiter, async (req, res) => {
     const { usuario, senha } = req.body || {};
     if (!usuario || !senha) {
         return res.status(400).json({ error: 'Usuário e senha são obrigatórios.' });
@@ -375,7 +401,7 @@ async function extrairContextoDoR2(pergunta) {
     }
 }
 
-app.post('/chat', exigirAuthAPI, async (req, res) => {
+app.post('/chat', chatLimiter, exigirAuthAPI, async (req, res) => {
     const { pergunta } = req.body;
 
     try {
