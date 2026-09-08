@@ -260,6 +260,55 @@ function pontuarRelevancia(arquivo, palavrasChave) {
     return palavrasChave.reduce((pontos, palavra) => pontos + (alvo.includes(palavra) ? 1 : 0), 0);
 }
 
+// Palavras que sinalizam que o usuário quer um apanhado amplo de um tema
+// ("resume tudo de X", "lista todas as questões de Y"), não uma dúvida pontual.
+// Checado contra palavras inteiras (não substring) pra não confundir, por
+// exemplo, "tud" dentro de "estudo".
+const GATILHOS_PEDIDO_AMPLO = new Set([
+    'resumo', 'resuma', 'resumir', 'resumindo', 'resumidamente',
+    'todas', 'todos', 'tudo', 'inteira', 'inteiro',
+    'completo', 'completa', 'completos', 'completas',
+    'lista', 'listar', 'listagem', 'listando'
+]);
+
+function pedidoAmplo(pergunta) {
+    const palavras = normalizarTexto(pergunta || '').split(/[^a-z0-9]+/);
+    return palavras.some(p => GATILHOS_PEDIDO_AMPLO.has(p));
+}
+
+// Acha o segmento de pasta (qualquer nível do caminho, não só o primeiro) cujo
+// NOME bate melhor com as palavras-chave da pergunta. Só usada quando
+// pedidoAmplo() indica que o usuário quer "tudo" de um tema — nesse caso,
+// em vez do top-8 individual por arquivo, trazemos a pasta inteira que
+// corresponde ao tema perguntado.
+function encontrarPastaAlvo(arquivosSuportados, palavrasChave) {
+    if (palavrasChave.length === 0) return null;
+
+    const segmentos = new Set();
+    for (const { arquivo } of arquivosSuportados) {
+        for (const segmento of arquivo.caminhoPasta.split('/')) {
+            if (segmento) segmentos.add(segmento);
+        }
+    }
+
+    let melhorSegmento = null;
+    let melhorPontuacao = 0;
+    for (const segmento of segmentos) {
+        const segmentoNormalizado = normalizarTexto(segmento);
+        const pontos = palavrasChave.reduce(
+            (soma, palavra) => soma + (segmentoNormalizado.includes(palavra) ? 1 : 0), 0
+        );
+        if (pontos > melhorPontuacao) {
+            melhorPontuacao = pontos;
+            melhorSegmento = segmento;
+        }
+    }
+    // Exige pelo menos uma palavra-chave batendo no NOME da pasta em si (não
+    // em qualquer arquivo solto) — sem isso, todo pedido amplo cairia na
+    // primeira pasta por acaso.
+    return melhorPontuacao > 0 ? melhorSegmento : null;
+}
+
 // Extrai o texto de um notebook Jupyter: só cells markdown/code (source),
 // sem outputs (gráficos, prints, stack traces) — só o que foi escrito, não
 // o resultado de execução.
@@ -273,6 +322,46 @@ function extrairTextoNotebook(bufferJson) {
         partes.push(`[${cell.cell_type}]\n${fonte}`);
     }
     return partes.join('\n\n');
+}
+
+// Resume um arquivo markdown com front-matter (formato usado nas questões do
+// ENADE, mas funciona para qualquer .md com esse padrão): extrai área/tópico/
+// número do front-matter e a linha de resposta oficial/sugerida, em vez de
+// cortar cru os primeiros N caracteres. Necessário porque em arquivos de
+// questão, a linha de resposta normalmente só aparece depois de 900-1800
+// caracteres (depois do enunciado completo) — um corte cru de 400-600
+// caracteres corta ANTES da resposta, que é exatamente a parte mais útil
+// numa revisão ampla ("resume tudo de X"). Retorna null se o arquivo não
+// tiver essa estrutura reconhecível (aí quem chama cai de volta pro corte
+// cru normal).
+function resumirMarkdownComFrontMatter(texto) {
+    const fm = texto.match(/^---\s*\n([\s\S]*?)\n---/);
+    if (!fm) return null;
+
+    const pegar = (campo) => {
+        const m = fm[1].match(new RegExp(`^${campo}:\\s*"?(.*?)"?\\s*$`, 'm'));
+        return m ? m[1] : null;
+    };
+
+    const numero = pegar('numero');
+    const tipo = pegar('tipo');
+    const area = pegar('area');
+    const topico = pegar('topico');
+
+    const respostaMatch = texto.match(/\*\*Resposta (?:oficial|sugerida)[^:]*:\*\*\s*(.+)/);
+    const resposta = respostaMatch ? respostaMatch[1].trim() : null;
+
+    // Se não achou nem área/tópico nem resposta, não vale a pena resumir —
+    // melhor deixar o corte cru pegar o que der.
+    if (!area && !topico && !resposta) return null;
+
+    const partes = [];
+    if (numero || tipo) partes.push(`[${tipo || 'questão'} ${numero || '?'}]`);
+    if (area) partes.push(`Área: ${area}.`);
+    if (topico) partes.push(`Tópico: ${topico}.`);
+    if (resposta) partes.push(`Resposta: ${resposta}`);
+
+    return partes.join(' ');
 }
 
 // Baixa e extrai o texto de um arquivo já classificado. PDF usa o parser
@@ -375,20 +464,72 @@ async function extrairContextoDoR2(pergunta) {
         // perguntado. Pergunta genérica (score 0 em tudo) mantém a ordem
         // original como fallback, em vez de retornar vazio.
         const palavrasChave = extrairPalavrasChave(pergunta || '');
-        const arquivosOrdenados = [...arquivosSuportados].sort((a, b) =>
-            pontuarRelevancia(b.arquivo, palavrasChave) - pontuarRelevancia(a.arquivo, palavrasChave)
-        );
-        console.log(`📌 Arquivos selecionados (top 8 de ${arquivosOrdenados.length}): ${arquivosOrdenados.slice(0, 8).map(a => a.arquivo.name).join(', ')}`);
 
-        // Processa os primeiros 8 arquivos suportados (agora ordenados por
-        // relevância) para manter o contexto dentro do limite da Groq. Só entra
-        // em "fontes" o que realmente foi extraído com sucesso — se um arquivo
-        // falhar a leitura, ele não fez parte do contexto de verdade.
+        // Modo "pasta inteira": se a pergunta pede um apanhado amplo ("resume
+        // tudo de Engenharia de Software") e existe uma pasta cujo nome bate
+        // com o tema perguntado, ignoramos o corte de 8 e trazemos TODOS os
+        // arquivos daquela pasta — é o caso em que 8 arquivos deixariam de
+        // fora boa parte de um tema com muitas questões.
+        let arquivosSelecionados;
+        let pastaAlvo = null;
+        if (pedidoAmplo(pergunta)) {
+            pastaAlvo = encontrarPastaAlvo(arquivosSuportados, palavrasChave);
+            if (pastaAlvo) {
+                arquivosSelecionados = arquivosSuportados
+                    .filter(({ arquivo }) => arquivo.caminhoPasta.split('/').includes(pastaAlvo))
+                    .slice(0, 60); // teto de segurança, bem acima de qualquer pasta real hoje
+                console.log(`📂 Pedido amplo detectado — trazendo a pasta "${pastaAlvo}" inteira (${arquivosSelecionados.length} arquivo(s)).`);
+            }
+        }
+
+        if (!arquivosSelecionados) {
+            const arquivosOrdenados = [...arquivosSuportados].sort((a, b) =>
+                pontuarRelevancia(b.arquivo, palavrasChave) - pontuarRelevancia(a.arquivo, palavrasChave)
+            );
+            arquivosSelecionados = arquivosOrdenados.slice(0, 8);
+        }
+
+        console.log(`📌 Arquivos selecionados (${arquivosSelecionados.length}): ${arquivosSelecionados.map(a => a.arquivo.name).join(', ')}`);
+
+        // Orçamento de caracteres adaptativo: no modo pasta inteira, muitos
+        // arquivos dividem um teto total (pra não estourar o contexto da
+        // Groq); no modo normal (poucos arquivos), mantém os 3000 de sempre.
+        //
+        // Ajustado para o modelo openai/gpt-oss-120b no plano gratuito da Groq,
+        // cujo teto real é 8.000 tokens/minuto (entrada + saída somadas) — bem
+        // mais apertado que a janela de contexto do modelo em si (128K). Reserva
+        // ~1.500 tokens pra resposta do modelo e ~300 pra system prompt/glossário/
+        // pergunta, sobrando ~6.000 tokens (~20.000-24.000 caracteres em
+        // português técnico, a ~4 chars/token) para o conteúdo dos arquivos.
+        // Ficamos com 20.000 para manter uma margem de segurança.
+        const ORCAMENTO_TOTAL_CHARS = 20000;
+        const limitePorArquivo = pastaAlvo
+            ? Math.max(400, Math.min(3000, Math.floor(ORCAMENTO_TOTAL_CHARS / arquivosSelecionados.length)))
+            : 3000;
+
+        // Processa os arquivos selecionados para manter o contexto dentro do
+        // limite da Groq. Só entra em "fontes" o que realmente foi extraído
+        // com sucesso — se um arquivo falhar a leitura, ele não fez parte do
+        // contexto de verdade.
         const fontes = [];
-        for (const { arquivo, tipo } of arquivosOrdenados.slice(0, 8)) {
+        for (const { arquivo, tipo } of arquivosSelecionados) {
             try {
                 const texto = await extrairTextoDoArquivo(s3, arquivo, tipo);
-                contextoExtraido += `\n--- MATÉRIA: ${arquivo.name} (${tipo}) ---\n${texto.substring(0, 3000)}\n`;
+
+                // No modo pasta inteira, .md com front-matter reconhecível usa o
+                // resumo inteligente (área/tópico/resposta) em vez do corte cru —
+                // garante que a resposta apareça mesmo com pouco espaço por
+                // arquivo. Fora desse modo, ou se o padrão não bater, mantém o
+                // corte cru de sempre.
+                let textoParaContexto = null;
+                if (pastaAlvo && tipo === 'md') {
+                    textoParaContexto = resumirMarkdownComFrontMatter(texto);
+                }
+                if (!textoParaContexto) {
+                    textoParaContexto = texto.substring(0, limitePorArquivo);
+                }
+
+                contextoExtraido += `\n--- MATÉRIA: ${arquivo.name} (${tipo}) ---\n${textoParaContexto}\n`;
                 fontes.push(arquivo.name);
             } catch (e) {
                 console.log(`Pulei o arquivo ${arquivo.name} por erro de leitura: ${e.message}`);
