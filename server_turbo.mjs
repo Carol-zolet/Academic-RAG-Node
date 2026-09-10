@@ -542,12 +542,33 @@ async function extrairContextoDoR2(pergunta) {
     }
 }
 
+// Histórico de conversa: teto de turnos e de tamanho por resposta antiga.
+// Mantém baixo de propósito — o teto de 8K tokens/min da Groq já é apertado
+// só com o contexto dos materiais (até 24.000 chars no modo normal), então o
+// histórico entra como continuidade ("e sobre X?"), não como transcrição fiel.
+const HISTORICO_MAX_TURNOS = 4;
+const HISTORICO_RESPOSTA_MAX_CHARS = 400;
+const HISTORICO_PERGUNTA_MAX_CHARS = 1000;
+
 app.post('/chat', chatLimiter, exigirAuthAPI, async (req, res) => {
-    const { pergunta } = req.body;
+    const { pergunta, historico } = req.body;
 
     try {
         const { contexto, fontes } = await extrairContextoDoR2(pergunta);
         const referenciaCanonica = buscarReferenciaCanonica(pergunta);
+
+        // Histórico mandado pelo front-end (guardado só na aba do navegador,
+        // sem persistência em disco/nuvem) — validado e truncado aqui, nunca
+        // confiando cegamente no tamanho/formato que o cliente mandou.
+        const mensagensHistorico = Array.isArray(historico)
+            ? historico
+                .slice(-HISTORICO_MAX_TURNOS)
+                .filter(turno => turno && typeof turno.pergunta === 'string' && typeof turno.resposta === 'string')
+                .flatMap(turno => [
+                    { role: 'user', content: turno.pergunta.slice(0, HISTORICO_PERGUNTA_MAX_CHARS) },
+                    { role: 'assistant', content: turno.resposta.slice(0, HISTORICO_RESPOSTA_MAX_CHARS) },
+                ])
+            : [];
 
         // Chamada para o novo modelo Llama 3.3
         const completion = await groq.chat.completions.create({
@@ -563,9 +584,12 @@ ${referenciaCanonica ? `4. Abaixo há uma REFERÊNCIA TÉCNICA CANÔNICA para o(
 REFERÊNCIA TÉCNICA CANÔNICA:
 ${referenciaCanonica}
 ` : ''}
+Se houver mensagens anteriores nesta conversa, use-as pra dar continuidade quando a pergunta atual se referir a elas (ex: "e sobre...", "me dá mais detalhe nisso").
+
 TOM: direto e confiante, como um mentor sênior que já sabe a resposta — sem perder profundidade técnica nem os exemplos práticos.
 
 Baseie-se nestes materiais: ${contexto}` },
+                ...mensagensHistorico,
                 { role: 'user', content: pergunta }
             ],
             model: 'openai/gpt-oss-120b',
@@ -704,6 +728,12 @@ app.get('/', exigirAuthPagina, (req, res) => {
             // depender do HTML já renderizado na tela.
             const respostasRaw = {};
 
+            // Histórico da conversa atual — só nesta aba, em memória, apagado ao
+            // recarregar a página ou fechar. Mandado pro servidor a cada pergunta
+            // pra dar continuidade em perguntas de acompanhamento ("e sobre X?").
+            const HISTORICO_MAX_TURNOS = 4;
+            let historicoConversa = [];
+
             function escapeHtml(str) {
                 return str.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
             }
@@ -763,11 +793,16 @@ app.get('/', exigirAuthPagina, (req, res) => {
                     const res = await fetch('/chat', {
                         method: 'POST',
                         headers: {'Content-Type': 'application/json'},
-                        body: JSON.stringify({ pergunta: p })
+                        body: JSON.stringify({ pergunta: p, historico: historicoConversa })
                     });
                     const data = await res.json();
                     const texto = data.resposta || 'Ops, tive um problema ao buscar essa informação.';
                     respostasRaw[msgId] = texto;
+
+                    historicoConversa.push({ pergunta: p, resposta: texto });
+                    if (historicoConversa.length > HISTORICO_MAX_TURNOS) {
+                        historicoConversa = historicoConversa.slice(-HISTORICO_MAX_TURNOS);
+                    }
 
                     botRow.querySelector('.msg-bubble').innerHTML = renderMarkdown(texto);
 
